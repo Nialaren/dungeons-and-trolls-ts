@@ -1,0 +1,40 @@
+{
+    "include": [
+        "src/**/*",
+    ],
+    "compilerOptions": {
+        "allowSyntheticDefaultImports": true,
+        "baseUrl": "./",
+        "declaration": true,
+        "resolveJsonModule": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "sourceMap": true,
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "noFallthroughCasesInSwitch": false,
+        "noImplicitAny": false,
+        "noImplicitReturns": true,
+        "noImplicitThis": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "removeComments": true,
+        "skipLibCheck": true,
+        "strictNullChecks": true,
+        "target": "es2018",
+        "lib": [
+            "esnext",
+            "dom"
+        ],
+        "typeRoots": [
+            "node_modules/@types",
+            "@types",
+        ],
+        "outDir": "dist"
+    },
+    "exclude": [
+        "./node_modules/**/*.tsx",
+        "node_modules/**/*.ts",
+        "node_modules"
+    ]
+}

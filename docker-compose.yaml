@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  client-gen:
+    image: openapitools/openapi-generator-cli
+    command: >
+      generate
+      -i https://converter.swagger.io/api/convert?url=https://raw.githubusercontent.com/gdg-garage/dungeons-and-trolls/master/api/dungeonsandtrolls.swagger.json
+      -g typescript-node
+      -o /dungeons_and_trolls_ts
+      --additional-properties=packageVersion=${VERSION}
+      --additional-properties=packageName=dungeons_and_trolls_ts
+    volumes:
+      - "./dungeons_and_trolls_ts:/dungeons_and_trolls_ts"
