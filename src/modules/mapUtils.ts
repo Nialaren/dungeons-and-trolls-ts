@@ -4,6 +4,9 @@ import {
     DungeonsandtrollsPosition
 } from '../dungeons_and_trolls_ts/api';
 import { IFullGameState } from '../types';
+import { USERNAME } from '../constants';
+import logger from "../logger";
+import * as events from "events";
 
 export function isSamePosition(posA: DungeonsandtrollsPosition, posB: DungeonsandtrollsPosition) {
     return posA.positionX === posB.positionX && posA.positionY === posB.positionY;
@@ -40,6 +43,7 @@ export function isMonsterOnTile(tile: DungeonsandtrollsMapObjects, exclude: stri
 
 export function playersOnCurrentLevel(state: IFullGameState) {
     const currentLevel = state.map.levels![0];
+
     const tilesWithPlayers = currentLevel.objects!.filter((obj) => obj.players && obj.players.length > 0);
     const players = tilesWithPlayers.map((tile) => tile.players).reduce((acc, current) => acc!.concat(current!), []) as DungeonsandtrollsCharacter[];
 
@@ -70,4 +74,10 @@ export function getPlayerOnLevel(gameState: IFullGameState, partialName: string)
         return player.name!.toLowerCase().includes(partialName);
     });
     return targetPlayer;
+}
+
+export function getDarikWillHealMe(gameState: IFullGameState) {
+    return gameState.events
+        .filter((event) => event.message?.includes('Will heal ' + USERNAME))
+        .length > 0;
 }

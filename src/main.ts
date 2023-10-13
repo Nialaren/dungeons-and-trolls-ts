@@ -9,7 +9,7 @@ import { findPortal, findStairs } from './modules/movement';
 import Character from './modules/Character';
 import { findNearestMonster } from './modules/monster';
 import { logBoughtItems, printToLogDir } from './modules/debug';
-import { getPlayerOnLevel, getPositionDistance, playersOnCurrentLevel } from './modules/mapUtils';
+import { getPlayerOnLevel, getPositionDistance, playersOnCurrentLevel, getDarikWillHealMe } from './modules/mapUtils';
 import { coordsToPosition } from './utils';
 import CommandBuilder from './modules/CommandBuilder';
 import { attackSkillBestMultiplier } from './modules/skill';
@@ -234,21 +234,31 @@ async function timerLoop() {
 			const isOnExitTile = charactedInstance.isOnExitTile();
 			const darik = getPlayerOnLevel(gameState, 'darik');
 
-			if (percentLife < 90 && charactedInstance.isInSafePlace()) {
+			if (percentLife < 100 && charactedInstance.isInSafePlace()) {
 				if (darik) {
-					const distanceFromPlayer = getPositionDistance(
-						gameState,
-						coordsToPosition(darik.coordinates!),
-					);
-
-					if (distanceFromPlayer <= 1) {
+					const darikWillHealMe = getDarikWillHealMe(gameState);
+					if (darikWillHealMe) {
 						if (charactedInstance.canRest()) {
 							await charactedInstance.tryRest();
 						} else {
 							await charactedInstance.waitOnPlace();
 						}
 						return;
-					} else if (distanceFromPlayer > 1) {
+					}
+
+					const distanceFromDarik = getPositionDistance(
+						gameState,
+						coordsToPosition(darik.coordinates!),
+					);
+
+					if (distanceFromDarik <= 1) {
+						if (charactedInstance.canRest()) {
+							await charactedInstance.tryRest();
+						} else {
+							await charactedInstance.waitOnPlace();
+						}
+						return;
+					} else if (distanceFromDarik > 1) {
 						await charactedInstance.runToPlayer(darik);
 						return;
 					}
