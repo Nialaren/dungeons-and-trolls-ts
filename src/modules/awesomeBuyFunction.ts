@@ -92,10 +92,10 @@ const EVALUATIONS_WEIGHTS: IWeights = Object.freeze({
         'intelligence': 0,
         'willpower': 0,
         'constitution': 0.1,
-        'slashResist': 0.7,
-        'pierceResist': 0.7,
+        'slashResist': 0.6,
+        'pierceResist': 0.6,
         'fireResist': 0.4,
-        'poisonResist': 0,
+        'poisonResist': 0.5,
         'electricResist': 0,
         'life': 0,
         'stamina': 0,
@@ -176,27 +176,30 @@ function evaluateItemSet(itemSet: IItemSet): number {
 
 function createCombinations(
     itemSets: IItemSet[],
-    items: DungeonsandtrollsItem[],
+    shopItems: DungeonsandtrollsItem[],
     budget: number,
     checkRequiremenst = false,
 ) {
     const pairs: IItemSet[] = [];
     // create pairs
-    itemSets.forEach((itemSet) => {
-        items.forEach((item) => {
+    for (let i = 0; i < itemSets.length; i++) {
+        const itemSet = itemSets[i];
+        for (let newItemIndex = 0; newItemIndex < shopItems.length; newItemIndex++) {
+            const item = shopItems[newItemIndex];
+
             if (!isSlotEmpty(itemSet, item)) {
-                return;
+                continue;
             }
             const items = itemSet.items.concat(item);
             const newPrice = currentPriceOfSet(items);
 
             // is Over budget?
             if (newPrice > budget) {
-                return;
+                continue;
             }
 
             if (checkRequiremenst && !requirementsSatisfied(items)) {
-                return;
+                continue;
             }
 
             const newSet: IItemSet = {
@@ -210,8 +213,8 @@ function createCombinations(
             newSet.value = evaluateItemSet(newSet);
 
             pairs.push(newSet);
-        });
-    });
+        }
+    }
     return pairs;
 }
 

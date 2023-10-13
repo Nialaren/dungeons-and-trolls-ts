@@ -9,7 +9,7 @@ import { findPortal, findStairs } from './modules/movement';
 import Character from './modules/Character';
 import { findNearestMonster } from './modules/monster';
 import { logBoughtItems, printToLogDir } from './modules/debug';
-import { getPlayerOnLevel, getPositionDistance, playersOnCurrentLevel } from './modules/mapUtils';
+import { getPlayerOnLevel } from './modules/mapUtils';
 import { coordsToPosition } from './utils';
 import CommandBuilder from './modules/CommandBuilder';
 import { attackSkillBestMultiplier } from './modules/skill';
@@ -184,6 +184,12 @@ async function timerLoop() {
 			// ZERO LEVEL
 			if (currentLevel === 0) {
 				logger.info('ZERO LEVEL');
+
+				if ((gameState.map.levels![0].deprecationInSeconds || 1) < 23) {
+					// wait for next tick.
+					// Shop is long
+					return;
+				}
 				
 				let itemsToBuy: DungeonsandtrollsItem[] = [];
 				if (isShoppingTime(currentLevel || 0, character)) {
@@ -238,7 +244,7 @@ async function timerLoop() {
 
 			const percentLife = charactedInstance.percentLife();
 			const isOnExitTile = charactedInstance.isOnExitTile();
-			const darik = getPlayerOnLevel(gameState, 'darik');
+			let darik = getPlayerOnLevel(gameState, 'darik');
 			let hasDarikHeal = false;
 
 			if (darik) {
@@ -253,8 +259,7 @@ async function timerLoop() {
 
 			if (percentLife < 80 && charactedInstance.isInSafePlace()) {
 				if (darik && hasDarikHeal) {
-					const distanceFromPlayer = getPositionDistance(
-						gameState,
+					const distanceFromPlayer = map.getPositionDistance(
 						coordsToPosition(darik.coordinates!),
 					);
 
@@ -284,15 +289,19 @@ async function timerLoop() {
 						return;
 					}
 				} else {
-					const playersOnLevel = playersOnCurrentLevel(gameState);
-					const darik = (playersOnLevel.players || []).find((player) => {
-						return player.name?.toLowerCase() === 'darik';
-					});
 					if (darik && hasDarikHeal) {
 						await charactedInstance.runToPlayer(darik);
 						return;
 					}
-					charactedInstance.runToExit();
+					if (!charactedInstance.isInSafePlace()) {
+						await charactedInstance.runToExit();;
+						return;
+					}
+					if (charactedInstance.canRest()) {
+						await charactedInstance.tryRest();
+						return;
+					}
+					await charactedInstance.waitOnPlace();
 				}
 				return;
 			}
@@ -324,46 +333,52 @@ async function timerLoop() {
 					}
 				}
 				await charactedInstance.walkToTile(tile);
-			} else {
-				const stairsObject = findStairs(gameState);
-				if (stairsObject) {
-					if (getPositionDistance(gameState, stairsObject.position!) <= 1 && gameState.currentLevel !== 0) {
-						const { players } = playersOnCurrentLevel(gameState);
+				return;
+			}
 
-						if (players) {
-							let maxDist = 0;
-							let maxPlayer: DungeonsandtrollsCharacter | undefined;
+			// Search for stairs
+			const stairsObject = findStairs(gameState);
+			if (!stairsObject) {
+				logger.error('No stairs');
+				await charactedInstance.waitOnPlace();
+				return;
+			}
+			// check if we should wait
+			if (map.getPositionDistance(stairsObject.position!) <= 1 && currentLevel !== 0) {
+				const playersData = map.playersOnCurrentLevel();
 
-							players.forEach((player) => {
-								if (player.id! === gameState.character.id!) {
-									return;
-								}
-								const disttanceToPlayer = getPositionDistance(
-									gameState,
-									coordsToPosition(player.coordinates!),
-								);
+				if (playersData.length > 0) {
+					let maxDist = 0;
+					let maxPlayer: DungeonsandtrollsCharacter | undefined;
 
-								if (disttanceToPlayer > maxDist) {
-									maxDist = disttanceToPlayer;
-									maxPlayer = player;
-								}
-							});
+					playersData.filter((playerData) => playerData.distance <= 10).forEach((playerData) => {
+						const {
+							player,
+							distance,
+						} = playerData;
 
-							if (maxDist > 2) {
-								logger.info(`Waiting for ${maxPlayer!.name}`);
-								await charactedInstance
-									.commads()
-									.yell(`Move your lazy ass! ${maxPlayer!.name}`)
-									.walkTo(gameState.currentPosition)
-									.exec();
-								return;
-							}
+						if (player.id! === gameState.character.id!) {
+							return;
 						}
-					}
+						if (distance > maxDist) {
+							maxDist = distance;
+							maxPlayer = player;
+						}
+					});
 
-					await charactedInstance.walkToTile(stairsObject);
+					if (maxDist > 1) {
+						logger.info(`Waiting for ${maxPlayer!.name}`);
+						await charactedInstance
+							.commads()
+							.yell(`Move your lazy ass! ${maxPlayer!.name}`)
+							.walkTo(gameState.currentPosition)
+							.exec();
+						return;
+					}
 				}
 			}
+
+			await charactedInstance.walkToTile(stairsObject);
 		} catch (error) {
 			logger.info(error, 'error')
 		}
