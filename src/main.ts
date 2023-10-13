@@ -1,7 +1,7 @@
 
 import { API_KEY, IP_ADDRESS } from './constants';
 import { DungeonsAndTrollsApi, DungeonsAndTrollsApiApiKeys } from './dungeons_and_trolls_ts/api/dungeonsAndTrollsApi';
-import { type DungeonsandtrollsGameState, DungeonsandtrollsPosition, DungeonsandtrollsAttributes, DungeonsandtrollsSkill, SkillTarget, DungeonsandtrollsItemType, DungeonsandtrollsIdentifiers, DungeonsandtrollsSkillUse, DungeonsandtrollsMapObjects, DungeonsandtrollsCharacter } from './dungeons_and_trolls_ts/model/models';
+import { type DungeonsandtrollsGameState, DungeonsandtrollsPosition, DungeonsandtrollsAttributes, DungeonsandtrollsSkill, SkillTarget, DungeonsandtrollsItemType, DungeonsandtrollsIdentifiers, DungeonsandtrollsSkillUse, DungeonsandtrollsMapObjects, DungeonsandtrollsCharacter, DungeonsandtrollsItem } from './dungeons_and_trolls_ts/model/models';
 import { type IFullGameState } from './types';
 import logger from './logger';
 import { buyItems, isShoppingTime } from './modules/shop';
@@ -185,18 +185,16 @@ async function timerLoop() {
 			if (currentLevel === 0) {
 				logger.info('ZERO LEVEL');
 				
+				let itemsToBuy: DungeonsandtrollsItem[] = [];
 				if (isShoppingTime(currentLevel || 0, character)) {
 					logger.info('SHOPPING TIME!');
-					const itemsToBuy = await buyItems(
+					itemsToBuy = await buyItems(
 						gameState.shopItems!,
 						character,
 					);
 					commandBuilder.buyItems(itemsToBuy);
 					// log
 					logBoughtItems(gameState, itemsToBuy);
-
-					// await commandBuilder.exec();
-					// return;
 				}
 
 				// Skill points
@@ -215,9 +213,17 @@ async function timerLoop() {
 				
 				if (destitantionObj) {
 					// also make exec
-					await charactedInstance.walkToTile(destitantionObj);
+					try {
+						await charactedInstance.walkToTile(destitantionObj);
+					} catch (err) {
+						if (err?.body?.message?.includes('satisfied')) {
+							printToLogDir('failed-to-buy.json', itemsToBuy);
+						}
+						return;
+					}
 					return;
 				}
+				return;
 			}
 
 			if (firstRun) {
@@ -233,9 +239,20 @@ async function timerLoop() {
 			const percentLife = charactedInstance.percentLife();
 			const isOnExitTile = charactedInstance.isOnExitTile();
 			const darik = getPlayerOnLevel(gameState, 'darik');
+			let hasDarikHeal = false;
 
-			if (percentLife < 90 && charactedInstance.isInSafePlace()) {
-				if (darik) {
+			if (darik) {
+				// check his skills
+				hasDarikHeal = (darik.equip || []).some((item) => {
+					return item.skills && item.skills.some((skill) => {
+						return skill.name?.toLowerCase().includes('patch');
+					});
+				});
+				logger.debug(`Darik has heal ${hasDarikHeal}`);
+			}
+
+			if (percentLife < 80 && charactedInstance.isInSafePlace()) {
+				if (darik && hasDarikHeal) {
 					const distanceFromPlayer = getPositionDistance(
 						gameState,
 						coordsToPosition(darik.coordinates!),
@@ -269,9 +286,9 @@ async function timerLoop() {
 				} else {
 					const playersOnLevel = playersOnCurrentLevel(gameState);
 					const darik = (playersOnLevel.players || []).find((player) => {
-						return player.name?.toLowerCase() === 'Darik';
+						return player.name?.toLowerCase() === 'darik';
 					});
-					if (darik) {
+					if (darik && hasDarikHeal) {
 						await charactedInstance.runToPlayer(darik);
 						return;
 					}

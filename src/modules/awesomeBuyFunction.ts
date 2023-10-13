@@ -109,6 +109,7 @@ const EVALUATIONS_WEIGHTS: IWeights = Object.freeze({
         'fireResist': 0.05,
         // 'poisonResist': 0.05,
     },
+    resistPenalty: 6,
 });
 
 function evaluateItemSet(itemSet: IItemSet): number {
@@ -128,11 +129,26 @@ function evaluateItemSet(itemSet: IItemSet): number {
 
 
     const attributes = mergeAttributes(...itemSet.items.map((item) => item.attributes!));
+    const itemWithPassiveSpell = itemSet.items.filter((item) => {
+        const passiveSkills = item.skills!.filter((skill) => {
+            return skill.flags!.passive;
+        });
+        return passiveSkills.length > 0
+    });
+
+    const passiveSkillAttrObj = new DungeonsandtrollsAttributes();
+
+    const passiveSkillAttributes = itemWithPassiveSpell.map((item) => {
+        return item.skills!.reduce((accAttributes, skill) => {
+            return mergeAttributes(accAttributes, skill.casterEffects!.attributes! as DungeonsandtrollsAttributes);
+        }, passiveSkillAttrObj);
+    });
 
     const value = (
         evaluateAttributes(
             attributeWeights,
             attributes,
+            ...passiveSkillAttributes,
         )
     );
 
@@ -141,8 +157,16 @@ function evaluateItemSet(itemSet: IItemSet): number {
     Object.keys(EVALUATIONS_WEIGHTS.resists).forEach((key) => {
         const currentAttrValue = attributes[key] || 0;
 
-        if (currentAttrValue === 0) {
-            sum -= 6;
+        let penalty = 6;
+
+        if (currentAttrValue > 10) {
+            penalty -= 1;
+        } else if (currentAttrValue === 0) {
+            penalty += 2;
+        }
+
+        if (penalty > 0) {
+            sum -= penalty;
         }
     });
 
@@ -154,12 +178,12 @@ function createCombinations(
     itemSets: IItemSet[],
     items: DungeonsandtrollsItem[],
     budget: number,
+    checkRequiremenst = false,
 ) {
     const pairs: IItemSet[] = [];
     // create pairs
     itemSets.forEach((itemSet) => {
         items.forEach((item) => {
-
             if (!isSlotEmpty(itemSet, item)) {
                 return;
             }
@@ -168,6 +192,10 @@ function createCombinations(
 
             // is Over budget?
             if (newPrice > budget) {
+                return;
+            }
+
+            if (checkRequiremenst && !requirementsSatisfied(items)) {
                 return;
             }
 
@@ -204,7 +232,7 @@ function createCombinations(
     'constant'?: number | null;
  */
 
-const BEST_ITEMS_NUM = 7000;
+const BEST_ITEMS_NUM = 5000;
 
 
 export function awesomeBuyFunctionv3(
@@ -258,7 +286,8 @@ export function awesomeBuyFunctionv3(
         const newCombinations = createCombinations(
             currentSets,
             shopItems,
-            currentBudget
+            currentBudget,
+            true,
         );
 
         if (newCombinations.length === 0) {
@@ -266,112 +295,7 @@ export function awesomeBuyFunctionv3(
         }
 
         newCombinations.sort((a, b) => (b.value - a.value));
-        if (i !== numOfRestItems - 1) {
-            currentSets = newCombinations.slice(0, BEST_ITEMS_NUM);
-        } else {
-            currentSets = newCombinations;
-        }
-    }
-
-    // filter those that does not satisfy requirements
-    const bestItemSets = currentSets.filter((itemSet) => {
-        return requirementsSatisfied(itemSet.items);
-    });
-
-    if (bestItemSets.length === 0) {
-        throw new Error("FUCK");
-    }
-
-    const debugObj = bestItemSets.slice(0, 30).map((itemSet) => {
-        return {
-            price: itemSet.price,
-            value: itemSet.value,
-            attributes: mergeAttributes(
-                ...itemSet.items.map((item) => item.attributes!)
-            ),
-            requirements: calculateRequirements(itemSet.items),
-            skillName: itemSet.skill.name,
-            skillDmg: itemSet.skill.damageAmount,
-            items: itemSet.items.map((item) => item.name),
-            slots: itemSet.items.map((item) => item.slot),
-        };
-    });
-    
-    printToLogDir('30-item-sets.json', debugObj);
-
-    return bestItemSets[0];
-}
-
-
-export function awesomeBuyFunctionv4(
-    shopItems: DungeonsandtrollsItem[],
-    character: DungeonsandtrollsCharacter,
-): IItemSet {
-    let currentBudget = character.money || 0;
-    let maxBudgetForStartItems = Math.floor(currentBudget / 3);
-
-    const skillWithItemPair = shopItems
-        .filter((item) => item.skills!.length > 0)
-        .map((item) => {
-            return item.skills!.map((skill) => ({
-                skill,
-                items: [item],
-            }));
-        })
-        .reduce((acc, pair) => acc.concat(pair));
-
-    const startItemSets = skillWithItemPair
-        .filter(({ skill }) => isDamageSkill(skill) && skill.damageType === DungeonsandtrollsDamageType.Slash)
-        .map((setTemplate) => {
-            const set: IItemSet = {
-                ...setTemplate,
-                price: currentPriceOfSet(setTemplate.items),
-                value: 0,
-            };
-            set.value = evaluateItemSet(set);
-            return set;
-        });
-
-    const itemsWithChargeSkill = skillWithItemPair.filter(({ skill }) => {
-        return skill.name!.toLowerCase().includes('charge');
-    }).map((set) => set.items[0]);
-
-    if (itemsWithChargeSkill.length === 0) {
-        logger.debug('ZERO CHARGES!');
-    }
-
-    // create pairs
-    const pairs = createCombinations(startItemSets, itemsWithChargeSkill, maxBudgetForStartItems);
-
-    // sort descending
-    pairs.sort((a, b) => (b.value - a.value));
-
-    const numOfRestItems = ITEM_TYPES.length - 2;
-
-    let currentSets = pairs;
-
-    for (let i = 0; i < numOfRestItems; i++) {
-        let newCombinations = createCombinations(
-            currentSets,
-            shopItems,
-            currentBudget
-        );
-
-        if (newCombinations.length === 0) {
-            break;
-        }
-
-        // check requirements
-        newCombinations = newCombinations.filter((itemSet) => {
-            return requirementsSatisfied(itemSet.items);
-        });
-
-        newCombinations.sort((a, b) => (b.value - a.value));
-        if (i !== numOfRestItems - 1) {
-            currentSets = newCombinations.slice(0, BEST_ITEMS_NUM);
-        } else {
-            currentSets = newCombinations;
-        }
+        currentSets = newCombinations.slice(0, BEST_ITEMS_NUM);
     }
 
     // filter those that does not satisfy requirements

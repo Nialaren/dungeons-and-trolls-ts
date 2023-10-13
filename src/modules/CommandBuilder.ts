@@ -86,6 +86,9 @@ export default class CommandBuilder {
             
             return true;
         } catch (error) {
+            if (error.err?.body?.message?.includes('satisfied')) {
+                throw error;
+            }
             logger.error(error);
             return false;
         }
