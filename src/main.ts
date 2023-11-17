@@ -244,7 +244,11 @@ async function timerLoop() {
 
 			const percentLife = charactedInstance.percentLife();
 			const isOnExitTile = charactedInstance.isOnExitTile();
-			let darik = getPlayerOnLevel(gameState, 'darik');
+			const nearestMonster = findNearestMonster(gameState);
+			const stairsTile = findStairs(gameState)!;
+			const stairsDistance = map.getPositionDistance(stairsTile.position!);
+
+			const darik = getPlayerOnLevel(gameState, 'darik');
 			let hasDarikHeal = false;
 
 			if (darik) {
@@ -257,8 +261,49 @@ async function timerLoop() {
 				logger.debug(`Darik has heal ${hasDarikHeal}`);
 			}
 
-			if (percentLife < 80 && charactedInstance.isInSafePlace()) {
-				if (darik && hasDarikHeal) {
+			// There is no monster => go to stairs and wait
+			if (!nearestMonster) {
+				// check if we should wait
+				if (stairsDistance <= 1 && currentLevel !== 0) {
+					const playersData = map.playersOnCurrentLevel();
+
+					if (playersData.length > 0) {
+						let maxDist = 0;
+						let maxPlayer: DungeonsandtrollsCharacter | undefined;
+
+						playersData.filter((playerData) => playerData.distance <= 10).forEach((playerData) => {
+							const {
+								player,
+								distance,
+							} = playerData;
+
+							if (player.id! === gameState.character.id!) {
+								return;
+							}
+							if (distance > maxDist) {
+								maxDist = distance;
+								maxPlayer = player;
+							}
+						});
+
+						if (maxDist > 1) {
+							logger.info(`Waiting for ${maxPlayer!.name}`);
+							await charactedInstance
+								.commads()
+								.yell(`Move your lazy ass! ${maxPlayer!.name}`)
+								.walkTo(gameState.currentPosition)
+								.exec();
+							return;
+						}
+					}
+				}
+				// run towards stairs
+				await charactedInstance.walkToTile(stairsTile!);
+				return;
+			}
+
+			if (percentLife < 80) {
+				if (charactedInstance.isInSafePlace() && darik && hasDarikHeal) {
 					const distanceFromPlayer = map.getPositionDistance(
 						coordsToPosition(darik.coordinates!),
 					);
@@ -275,110 +320,65 @@ async function timerLoop() {
 						return;
 					}
 				}
-			}
 
-			if (
-				percentLife < 40
-				|| (charactedInstance.percentStamina() < 10 && !charactedInstance.canRest())
-			) {
-				if (isOnExitTile) {
-					if (charactedInstance.canRest()) {
-						await charactedInstance.tryRest();
+				// Danger zone
+				if (
+					percentLife < 40
+					|| (charactedInstance.percentStamina() < 10 && !charactedInstance.canRest())
+				) {
+					if (isOnExitTile) {
+						if (charactedInstance.canRest()) {
+							await charactedInstance.tryRest();
+						} else {
+							await charactedInstance.yell('Wating for darik!');
+							return;
+						}
 					} else {
-						await charactedInstance.yell('Wating for darik!');
-						return;
+						if (darik && hasDarikHeal) {
+							await charactedInstance.runToPlayer(darik);
+							return;
+						}
+						if (!charactedInstance.isInSafePlace()) {
+							await charactedInstance.runToExit();;
+							return;
+						}
+						if (charactedInstance.canRest()) {
+							await charactedInstance.tryRest();
+							return;
+						}
+	
+						const stairs = findStairs(gameState)!;
+						await charactedInstance.walkToTile(stairs);
 					}
-				} else {
-					if (darik && hasDarikHeal) {
-						await charactedInstance.runToPlayer(darik);
-						return;
-					}
-					if (!charactedInstance.isInSafePlace()) {
-						await charactedInstance.runToExit();;
-						return;
-					}
-					if (charactedInstance.canRest()) {
-						await charactedInstance.tryRest();
-						return;
-					}
-					await charactedInstance.waitOnPlace();
+					return;
 				}
-				return;
 			}
 
-			const monsterData = findNearestMonster(gameState);
-
-			if (await charactedInstance.tryRest(monsterData?.tile)) {
+			const { tile, monster } = nearestMonster;
+			if (await charactedInstance.tryRest(tile)) {
 				// resting
 				return;
 			}
 			
-			if (monsterData) {
-				const { tile, monster } = monsterData;
-				if (charactedInstance.isMonsterInLineOfSight(tile)) {
-					if (charactedInstance.isMonsterInAttackRange(tile)) {
-						const attackSuccess = await charactedInstance.attackMonster(tile, monster);
-						if (!attackSuccess) {
-							if (!await charactedInstance.runToExit()) {
-								logger.debug('Failed to run awai');
-								return;
-							};
-						} else {
+			if (charactedInstance.isMonsterInLineOfSight(tile)) {
+				if (charactedInstance.isMonsterInAttackRange(tile)) {
+					const attackSuccess = await charactedInstance.attackMonster(tile, monster);
+					if (!attackSuccess) {
+						if (!await charactedInstance.runToExit()) {
+							logger.debug('Failed to run awai');
 							return;
-						}
-					} else if (charactedInstance.canChargeToMonster(tile)) {
-						logger.debug('should charge to monster');
-						await charactedInstance.chargeToMonster(tile, monster);
+						};
+					} else {
 						return;
 					}
-				}
-				await charactedInstance.walkToTile(tile);
-				return;
-			}
-
-			// Search for stairs
-			const stairsObject = findStairs(gameState);
-			if (!stairsObject) {
-				logger.error('No stairs');
-				await charactedInstance.waitOnPlace();
-				return;
-			}
-			// check if we should wait
-			if (map.getPositionDistance(stairsObject.position!) <= 1 && currentLevel !== 0) {
-				const playersData = map.playersOnCurrentLevel();
-
-				if (playersData.length > 0) {
-					let maxDist = 0;
-					let maxPlayer: DungeonsandtrollsCharacter | undefined;
-
-					playersData.filter((playerData) => playerData.distance <= 10).forEach((playerData) => {
-						const {
-							player,
-							distance,
-						} = playerData;
-
-						if (player.id! === gameState.character.id!) {
-							return;
-						}
-						if (distance > maxDist) {
-							maxDist = distance;
-							maxPlayer = player;
-						}
-					});
-
-					if (maxDist > 1) {
-						logger.info(`Waiting for ${maxPlayer!.name}`);
-						await charactedInstance
-							.commads()
-							.yell(`Move your lazy ass! ${maxPlayer!.name}`)
-							.walkTo(gameState.currentPosition)
-							.exec();
-						return;
-					}
+				} else if (charactedInstance.canChargeToMonster(tile)) {
+					logger.debug('should charge to monster');
+					await charactedInstance.chargeToMonster(tile, monster);
+					return;
 				}
 			}
-
-			await charactedInstance.walkToTile(stairsObject);
+			// walk to monster
+			await charactedInstance.walkToTile(tile);
 		} catch (error) {
 			logger.info(error, 'error')
 		}
