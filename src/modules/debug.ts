@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs/promises';
 import path from 'path';
 import logger from '../logger';
 import { DungeonsandtrollsItem } from 'src/dungeons_and_trolls_ts/api';
@@ -21,12 +21,13 @@ export async function printToLogDir(fileName: string, data: any) {
         }
     }
 
-
-    fs.writeFile(destinationPath, dataBuffer, (error) => {
+    try {
+        await fs.writeFile(destinationPath, dataBuffer);
+    } catch (error) {
         if (error) {
             logger.error(data, 'Cannot write itemsData');
         }
-    });
+    }
 }
 
 export async function logBoughtItems(gameState: IFullGameState, items: DungeonsandtrollsItem[]) {

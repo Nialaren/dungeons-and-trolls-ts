@@ -12,8 +12,9 @@ import {
     filterBuyable,
     findBestDamageSkill,
     findItemWithBestAttackSkill,
+    requirementsSatisfied,
 } from './item';
-import { awesomeBuyFunctionv3 as awesomeBuyFunction, requirementsSatisfied } from './awesomeBuyFunction';
+import { awesomeBuyFunctionv3 as awesomeBuyFunction  } from './awesomeBuyFunction';
 
 
 function calculateItemValueWithSkill(item: DungeonsandtrollsItem, skill: DungeonsandtrollsSkill) {

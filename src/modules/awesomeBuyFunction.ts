@@ -5,10 +5,14 @@ import {
     DungeonsandtrollsDamageType,
     DungeonsandtrollsItem,
     DungeonsandtrollsSkill,
-    DungeonsandtrollsSkillAttributes,
 } from '../dungeons_and_trolls_ts/api';
-import { attibutesToArray, attributeKeys, evaluateAttributes, mergeAttributes } from './attributes';
-import { ITEM_TYPES, currentPriceOfSet } from './item';
+import { evaluateAttributes, mergeAttributes } from './attributes';
+import {
+    ITEM_TYPES,
+    calculateStats,
+    currentPriceOfSet,
+    requirementsSatisfied,
+} from './item';
 import { attackSkillBestMultiplier, isDamageSkill } from './skill';
 import { printToLogDir } from './debug';
 
@@ -38,42 +42,7 @@ const EMPTY_ATTIBUTES = Object.freeze({
 const ATTRIBUTE_KEYS = Object.freeze(Object.keys(EMPTY_ATTIBUTES));
 
 
-export function calculateRequirements(items: DungeonsandtrollsItem[]){
-    const allRequirements: Record<string, any> = {};
-    const allAttributes: Record<string, any> = {};
 
-    items.forEach((item) => {
-        const {
-            requirements = {},
-            attributes = {},
-        } = item;
-
-        Object.keys(requirements).forEach((requiremenKey) => {
-            allRequirements[requiremenKey] = (allRequirements[requiremenKey] || 0) + (requirements[requiremenKey] || 0);
-        });
-        Object.keys(attributes).forEach((attributeKey) => {
-            allAttributes[attributeKey] = (allAttributes[attributeKey] || 0) + (attributes[attributeKey] || 0);
-        });
-    });
-
-    return allRequirements;
-}
-
-export function requirementsSatisfied(items: DungeonsandtrollsItem[]) {
-    const requirements = calculateRequirements(items);
-
-    items.forEach(({ attributes }) => {
-        if (attributes) {
-            Object.keys(attributes).forEach((requirementKey) => {
-                requirements[requirementKey] -= (attributes[requirementKey] || 0);
-            });
-        }
-    });
-
-    const someRequirementsFound = ATTRIBUTE_KEYS.some((key) => requirements[key] > 0);
-
-    return someRequirementsFound ? false : true;
-}
 
 function isSlotEmpty(itemSet: IItemSet, itemToCheck: DungeonsandtrollsItem) {
     return !itemSet.items.some((item) => item.slot === itemToCheck.slot);
@@ -112,9 +81,11 @@ const EVALUATIONS_WEIGHTS: IWeights = Object.freeze({
     resistPenalty: 6,
 });
 
-function evaluateItemSet(itemSet: IItemSet): number {
-    const damageMlutiplierAttrKey = attackSkillBestMultiplier(itemSet.skill);
-    const damageMultiplierValue = itemSet.skill.damageAmount![damageMlutiplierAttrKey];
+
+
+function evaluateItems(items: DungeonsandtrollsItem[], skill: DungeonsandtrollsSkill) {
+    const damageMlutiplierAttrKey = attackSkillBestMultiplier(skill);
+    const damageMultiplierValue = skill.damageAmount![damageMlutiplierAttrKey];
     
     
     const attributeWeights: IWeights['attributes'] = {
@@ -128,8 +99,8 @@ function evaluateItemSet(itemSet: IItemSet): number {
     attributeWeights[damageMlutiplierAttrKey] = EVALUATIONS_WEIGHTS.skillDamage + damageMultiplierValue;
 
 
-    const attributes = mergeAttributes(...itemSet.items.map((item) => item.attributes!));
-    const itemWithPassiveSpell = itemSet.items.filter((item) => {
+    const attributes = mergeAttributes(...items.map((item) => item.attributes!));
+    const itemWithPassiveSpell = items.filter((item) => {
         const passiveSkills = item.skills!.filter((skill) => {
             return skill.flags!.passive;
         });
@@ -173,6 +144,14 @@ function evaluateItemSet(itemSet: IItemSet): number {
     return value + sum;
 }
 
+function evaluateItemSet(itemSet: IItemSet): number {
+    return evaluateItems(itemSet.items, itemSet.skill);
+}
+
+
+function createSetKey(items: DungeonsandtrollsItem[]) {
+    return items.map((item) => item.name!).sort().join(';');
+}
 
 function createCombinations(
     itemSets: IItemSet[],
@@ -180,6 +159,7 @@ function createCombinations(
     budget: number,
     checkRequiremenst = false,
 ) {
+    const uniqueSets = new Set<string>();
     const pairs: IItemSet[] = [];
     // create pairs
     for (let i = 0; i < itemSets.length; i++) {
@@ -191,6 +171,14 @@ function createCombinations(
                 continue;
             }
             const items = itemSet.items.concat(item);
+
+            const setKey = createSetKey(items);
+
+            // already have this combination ?
+            if (uniqueSets.has(setKey)) {
+                continue;
+            }
+
             const newPrice = currentPriceOfSet(items);
 
             // is Over budget?
@@ -212,6 +200,8 @@ function createCombinations(
             // assign new value
             newSet.value = evaluateItemSet(newSet);
 
+            // add new key
+            uniqueSets.add(setKey);
             pairs.push(newSet);
         }
     }
@@ -268,7 +258,7 @@ export function awesomeBuyFunctionv3(
         });
 
     const itemsWithChargeSkill = skillWithItemPair.filter(({ skill }) => {
-        return skill.name!.toLowerCase().includes('charge');
+        return skill.name!.toLowerCase().split(' ').includes('charge');
     }).map((set) => set.items[0]);
 
     if (itemsWithChargeSkill.length === 0) {
@@ -277,9 +267,14 @@ export function awesomeBuyFunctionv3(
 
     // create pairs
     const pairs = createCombinations(startItemSets, itemsWithChargeSkill, maxBudgetForStartItems);
-
+    
     // sort descending
     pairs.sort((a, b) => (b.value - a.value));
+
+
+    // logger.info(`${pairs.length} pairs`);
+    // printToLogDir('pairs.json', pairs);
+
 
     const numOfRestItems = ITEM_TYPES.length - 2;
 
@@ -311,13 +306,15 @@ export function awesomeBuyFunctionv3(
     }
 
     const debugObj = bestItemSets.slice(0, 30).map((itemSet) => {
+        const {
+            requirements,
+            attributes,
+        } = calculateStats(itemSet.items);
         return {
             price: itemSet.price,
             value: itemSet.value,
-            attributes: mergeAttributes(
-                ...itemSet.items.map((item) => item.attributes!)
-            ),
-            requirements: calculateRequirements(itemSet.items),
+            attributes,
+            requirements,
             skillName: itemSet.skill.name,
             skillDmg: itemSet.skill.damageAmount,
             items: itemSet.items.map((item) => item.name),

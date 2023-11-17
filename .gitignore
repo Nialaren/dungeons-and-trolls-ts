@@ -1,5 +1,6 @@
 node_modules/
 dist/
-logs/
+logs/*.json
+logs-backup/
 notes.txt
 src/constants.ts

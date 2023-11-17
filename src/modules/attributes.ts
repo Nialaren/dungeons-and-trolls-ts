@@ -17,6 +17,23 @@ export const attributeKeys = [
 	'constant',
 ];
 
+export const EMPTY_ATTIBUTES = Object.freeze({
+    'strength': 0,
+    'dexterity': 0,
+    'intelligence': 0,
+    'willpower': 0,
+    'constitution': 0,
+    'slashResist': 0,
+    'pierceResist': 0,
+    'fireResist': 0,
+    'poisonResist': 0,
+    'electricResist': 0,
+    'life': 0,
+    'stamina': 0,
+    'mana': 0,
+    'constant': 0,
+});
+
 export function attibutesToArray(attributes: DungeonsandtrollsAttributes) {
 	return attributeKeys.map((attrKey) => attributes[attrKey] || 0);
 }
